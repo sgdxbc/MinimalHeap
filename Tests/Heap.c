@@ -96,7 +96,7 @@ void HeapOp() {
     Chuck *ck1 = ck;
     Chuck *ck2 = SplitIfWorthy(ck1, 128);
     Chuck *ck3 = SplitIfWorthy(ck2, 64);
-    Chuck *ck4 = SplitIfWorthy(ck3, 256);
+    SplitIfWorthy(ck3, 256);
     MoveIn(heap, ck1);
     MoveIn(heap, ck3);
     assert(heap->head == ck1);
@@ -165,6 +165,78 @@ void ReleaseNoLoss() {
     free(raw);
 }
 
+void AssertConsistency(Heap *heap, Chuck *lowest, Chuck *highest) {
+    (void) heap, (void) lowest, (void) highest;
+#ifdef NOMALLOC_TEST_RESTRICT
+    Size prevSize = 0;
+    uint32_t inListCount = 0;
+    for (Chuck *current = heap->head; current; current = current->next) {
+        Size size = GetSize(current);
+        assert(size >= prevSize);
+        prevSize = size;
+
+        assert(current->lowerUsed);
+        assert(GetUsed(GetHigher(current)));
+        inListCount += 1;
+    }
+    uint32_t totalFreeCount = 0;
+    for (Chuck *current = lowest; current != highest; current = GetHigher(current)) {
+        assert(current->lowerUsed || GetUsed(current));
+        if (!GetUsed(current)) {
+            assert(GetLower(GetHigher(current)) == current);
+            totalFreeCount += 1;
+        }
+    }
+    assert(inListCount == totalFreeCount);
+#endif
+}
+
+void Random() {
+    // no set seed for reproducible
+    Raw raw = malloc(sizeof(uint8_t) * (64u << 20u));
+    Heap *heap = CreateHeap(raw, 64u << 20u);
+    Size originalSize = GetSize(heap->head);
+    Chuck *lowest = heap->head, *highest = GetHigher(GetHigher(heap->head));
+
+    Raw objects[16384];
+    memset(objects, 0, sizeof(Raw) * 16384);
+    for (int i = 0; i < 100000000; i += 1) {
+        long index = random() % 16384;
+        if (objects[index]) {
+            ReleaseObject(heap, objects[index]);
+            objects[index] = NULL;
+        } else {
+            objects[index] = AllocateObject(heap, random() % (32u << 10u));
+        }
+        AssertConsistency(heap, lowest, highest);
+    } // no assertion, I will be glad if it will not break itself
+    for (int i = 0; i < 16384; i += 1) {
+        if (objects[i]) {
+            ReleaseObject(heap, objects[i]);
+        }
+    }
+    assert(heap->head == heap->last);
+    assert(GetSize(heap->head) == originalSize);
+
+    free(raw);
+}
+
+void Misc() {
+    Raw raw[8192];
+    Heap *heap = CreateHeap(raw, 8192);
+    assert(AllocateObject(heap, 16384) == NULL);
+    uint32_t *array = AllocateZeroedObjectList(heap, 128, sizeof(uint32_t));
+    for (int i = 0; i < 128; i += 1) {
+        assert(array[i] == 0);
+    }
+    assert(ResizeObject(heap, array, 0) == array);
+    assert(ResizeObject(heap, array, 256 * sizeof(uint32_t)) == array);
+    AllocateObject(heap, 0);
+    Raw *resized = ResizeObject(heap, array, 512 * sizeof(uint32_t));
+    assert(resized);
+    assert(resized != (Raw) array);
+}
+
 #define RunTest(testName)      \
     printf("* %s\n", #testName); \
     testName()
@@ -175,5 +247,7 @@ int main(void) {
     RunTest(HeapOp);
     RunTest(ObjectFullyUsable);
     RunTest(ReleaseNoLoss);
+    RunTest(Random);
+    RunTest(Misc);
     return 0;
 }

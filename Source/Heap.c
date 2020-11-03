@@ -31,19 +31,27 @@ Heap *CreateHeap(Raw raw, Size userSize) {
     return heap;
 }
 
+static void AllocateInChuck(Heap *heap, Chuck *chuck, Size size) {
+    MoveOut(heap, chuck);
+    Chuck *remain = SplitIfWorthy(chuck, size);
+    if (remain) {
+        if (!GetUsed(GetHigher(remain))) {
+            MoveOut(heap, GetHigher(remain));
+            SetHigher(remain, GetHigher(GetHigher(remain)));
+        }
+        MoveIn(heap, remain);
+    }
+}
+
 Raw AllocateObject(Heap *heap, Size userSize) {
     Size size = (userSize + OVERHEAD_OF_USED_CHUCK + 0x07) >> 3u << 3u;
     Chuck *selected = FindSmallestFitInHeap(heap, size);
-    assert(!GetUsed(selected));
     if (!selected) {
         return NULL;
     }
-    MoveOut(heap, selected);
-    Chuck *remain = SplitIfWorthy(selected, size);
-    if (remain) {
-        SetUsed(remain, 0);
-        MoveIn(heap, remain);
-    }
+
+    assert(!GetUsed(selected));
+    AllocateInChuck(heap, selected, size);
     SetUsed(selected, 1);
     return ToObject(selected);
 }
@@ -74,7 +82,7 @@ Raw ResizeObject(Heap *heap, Raw object, Size userSize) {
     }
     if (!GetUsed(GetHigher(chuck)) &&
         size <= GetSize(chuck) + GetSize(GetHigher(chuck))) {
-        MoveOut(heap, GetHigher(chuck));
+        AllocateInChuck(heap, GetHigher(chuck), size - GetSize(chuck));
         SetHigher(chuck, GetHigher(GetHigher(chuck)));
         return object;
     }

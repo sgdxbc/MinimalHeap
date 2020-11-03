@@ -1,7 +1,7 @@
 //
 
-#ifndef NOMALLOC_INCLUDES_HEAP_H
-#define NOMALLOC_INCLUDES_HEAP_H
+#ifndef NOMALLOC_INCLUDE_HEAP_H
+#define NOMALLOC_INCLUDE_HEAP_H
 
 #include <stddef.h>
 #include <string.h>

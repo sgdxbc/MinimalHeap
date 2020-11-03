@@ -102,7 +102,9 @@ static void SetLower(Chuck *chuck, Chuck *lower) {
 }
 
 static void SetHigher(Chuck *chuck, Chuck *higher) {
-    assert(!GetUsed(chuck)); // lowerSize of higher chuck is not taken
+    // huge mistake here
+    // we are just about to set lowerSize to another place
+    // assert(!GetUsed(chuck)); // lowerSize of higher chuck is not taken
     SetSize(chuck, (Bytes) higher - (Bytes) chuck);
 }
 
@@ -138,14 +140,18 @@ static Chuck *SplitIfWorthy(Chuck *chuck, Size size) {
         size = sizeof(Chuck);
     }
     size = (size + 0x07u) >> 3u << 3u;
-    if (GetSize(chuck) <= size + sizeof(Chuck)) {
+    // split to get a chuck whose size equals to sizeof(Chuck) is still worthy
+    // it could store sizeof(Chuck) - OVERHEAD_OF_USED_CHUCK bytes data
+    if (GetSize(chuck) < size + sizeof(Chuck)) {
         return NULL;
     }
     Chuck *lower = chuck, *higher = GetHigher(chuck);
     SetSize(lower, size);
     Chuck *avail = GetHigher(lower);
+    // SetUsed(avail, 0);
+    SetUsed(lower, 0);
     // a little worry that compiler is not clever enough to eliminate this
-    // SetLower(avail, lower);
+    SetLower(avail, lower);
     SetHigher(avail, higher);
     return avail;
 }
@@ -204,7 +210,6 @@ static uint8_t MatchSorted(Size size) {
            ((size >> (mostSigBitIndex - 2u)) & 0x03u);
 }
 
-
 static Chuck *FindSmallestFitInHeap(Heap *heap, Size size) {
     Chuck *start = NULL;
     if (size < NOT_EXACT_MIN) {
@@ -227,14 +232,13 @@ static Chuck *FindSmallestFitInHeap(Heap *heap, Size size) {
     return FindSmallestFit(start, size);
 }
 
-static Chuck *FindInsertionHint(Heap *heap, Size size) {
-    Chuck *fit = FindSmallestFitInHeap(heap, size);
-    return fit ? fit : heap->last;
-}
-
 static void MoveIn(Heap *heap, Chuck *chuck) {
     if (heap->head) {
-        Insert(FindInsertionHint(heap, GetSize(chuck)), chuck);
+        Chuck *fit = FindSmallestFitInHeap(heap, GetSize(chuck));
+        Insert(fit ? fit : heap->last, chuck);
+    } else {
+        SetPrev(chuck, NULL);
+        SetNext(chuck, NULL);
     }
 
     if (!heap->head) {
